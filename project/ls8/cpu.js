@@ -71,6 +71,7 @@ class CPU {
         break;
       case "ADD":
         return this.reg[regA] + this.reg[regB];
+        break;
     }
   }
 
@@ -81,6 +82,15 @@ class CPU {
     const inting = () => {
       this.stopTimer(); // Don't interrupt
       this.reg[6] = this.reg[6] & 0b11111110; //Bit
+      handle_PUSHval(this.reg.PC);
+      handle_PUSHval(this.reg.FL);
+      for (let i = 0; i < 7; i++) {
+        handle_PUSHval(this.reg[i]);
+      }
+
+      this.reg.PC = this.ram.read(0xf8); //Handler address
+
+      this.advancePC = false;
     };
     // Load the instruction register (IR--can just be a local variable here)
     // from the memory address pointed to by the PC. (I.e. the PC holds the
@@ -152,6 +162,66 @@ class CPU {
       this.reg.PC = this.reg[register];
       this.advancePC = false;
     };
+
+    const handle_HLT = () => {
+      this.stopClock();
+      clearInterval(this.timer);
+    };
+
+    const handle_IRET = () => {
+      for (let i = 6; i >= 0; i--) {
+        this.reg[i] = handle_POPval();
+      }
+      this.reg.FL = handle_POPval();
+      this.reg.PC = handle_POPval();
+      this.startTimer();
+      IR = this.ram.read(this.reg.PC);
+      this.advancePC = false;
+    };
+
+    const handle_POP = register => {
+      this.reg[register] = handle_POPval();
+    };
+
+    const handle_POPval = () => {
+      return this.ram.read(this.reg[SP]++);
+    };
+
+    const handle_PUSH = register => {
+      this.ram.write(--this.reg[SP], this.reg[register]);
+    };
+
+    const handle_PUSHval = value => {
+      this.ram.write(--this.reg[SP], value);
+    };
+
+    const handle_RET = () => {
+      this.reg.PC = handle_POPval();
+    };
+
+    const branchTable = {
+      [ADD]: handle_ADD,
+      [MUL]: handle_MUL
+    };
+
+    switch (IR) {
+      case CALL: // Mul and Add shouldnt be in here...
+      case IRET:
+      case JEQ:
+      case JGT:
+      case JLT:
+      case JMP:
+      case JNE:
+      case RET:
+        break;
+      default:
+        // move PC for all commands that do not directly set it
+        if (this.advancePC) {
+          this.reg.PC += (IR >>> 6) + 1;
+        }
+        this.advancePC = true;
+        break;
+    }
 
     // Increment the PC register to go to the next instruction. Instructions
     // can be 1, 2, or 3 bytes long. Hint: the high 2 bits of the
