@@ -16,7 +16,7 @@ class CPU {
 
     // Special-purpose registers
     this.reg.PC = 0; // Program Counter
-    this.reg.FL = 0; // Flag
+    this.reg.FL = 0; // Flag Reg
     this.reg[7] = 0xf4; // SP
     this.reg[6] = 0; // Keypress
   }
@@ -81,16 +81,17 @@ class CPU {
   tick() {
     const inting = () => {
       this.stopTimer(); // Don't interrupt
-      this.reg[6] = this.reg[6] & 0b11111110; //Bit
-      handle_PUSHval(this.reg.PC);
-      handle_PUSHval(this.reg.FL);
+      this.reg[6] = this.reg[6] & 0b11111110; //Bit clear
+      handle_PUSHval(this.reg.PC); //register pc stack gets pushed
+      handle_PUSHval(this.reg.FL); //flag gets pushed to stack
       for (let i = 0; i < 7; i++) {
+        //R0 to R6 in order
         handle_PUSHval(this.reg[i]);
       }
 
       this.reg.PC = this.ram.read(0xf8); //Handler address
 
-      this.advancePC = false;
+      this.advancePC = false; //
     };
     // Load the instruction register (IR--can just be a local variable here)
     // from the memory address pointed to by the PC. (I.e. the PC holds the
@@ -138,8 +139,10 @@ class CPU {
       this.advancePC = true;
     };
 
-    const handle_MUL = (registerA, registerB) => {
-      this.reg[registerA] = this.alu("MUL", registerA, registerB);
+    const handle_CALL = register => {
+      handle_PUSHval(this.reg.PC + 2);
+      this.reg.PC = this.reg[register];
+      this.advancePC = false;
     };
 
     const handle_CMP = (registerA, registerB) => {
@@ -157,12 +160,6 @@ class CPU {
       this.advancePC = true;
     };
 
-    const handle_CALL = register => {
-      handle_PUSHval(this.reg.PC + 2);
-      this.reg.PC = this.reg[register];
-      this.advancePC = false;
-    };
-
     const handle_HLT = () => {
       this.stopClock();
       clearInterval(this.timer);
@@ -170,13 +167,58 @@ class CPU {
 
     const handle_IRET = () => {
       for (let i = 6; i >= 0; i--) {
+        //pop R6 into R0
         this.reg[i] = handle_POPval();
       }
-      this.reg.FL = handle_POPval();
+      this.reg.FL = handle_POPval(); //FL register is popped
       this.reg.PC = handle_POPval();
-      this.startTimer();
-      IR = this.ram.read(this.reg.PC);
-      this.advancePC = false;
+      this.startTimer(); //start interrupt
+      IR = this.ram.read(this.reg.PC); // move on to next step
+      this.advancePC = false; // else false
+    };
+
+    const handle_JEQ = register => {
+      if (this.reg.FL === 0b00000001) {
+        handle_JMP(register);
+      } else {
+        this.reg.PC += 2;
+      }
+    };
+
+    const handle_JGT = register => {
+      if (this.reg.FL === 0b00000010) {
+        handle_JMP(register);
+      } else {
+        this.reg.PC += 2;
+      }
+    };
+
+    const handle_JLT = register => {
+      if (this.reg.FL === 0b00000100) {
+        handle_JMP(register);
+      } else {
+        this.reg.PC += 2;
+      }
+    };
+
+    const handle_JMP = register => {
+      this.reg.PC = this.reg[register];
+    };
+
+    const handle_JNE = register => {
+      if (this.reg.FL !== 0b00000001) {
+        handle_JMP(register);
+      } else {
+        this.reg.PC += 2;
+      }
+    };
+
+    const handle_LDI = (register, value) => {
+      this.reg[register] = value;
+    };
+
+    const handle_MUL = (registerA, registerB) => {
+      this.reg[registerA] = this.alu("MUL", registerA, registerB);
     };
 
     const handle_POP = register => {
@@ -185,6 +227,14 @@ class CPU {
 
     const handle_POPval = () => {
       return this.ram.read(this.reg[SP]++);
+    };
+
+    const handle_PRA = register => {
+      console.log(String.fromCharCode(this.reg[register]));
+    };
+
+    const handle_PRN = register => {
+      console.log(this.reg[register]);
     };
 
     const handle_PUSH = register => {
@@ -199,10 +249,41 @@ class CPU {
       this.reg.PC = handle_POPval();
     };
 
+    const handle_ST = (registerA, registerB) => {
+      this.ram.write(this.reg[registerA], this.reg[registerB]);
+    };
+
     const branchTable = {
       [ADD]: handle_ADD,
-      [MUL]: handle_MUL
+      [CALL]: handle_CALL,
+      [CMP]: handle_CMP,
+      [HLT]: handle_HLT,
+      [IRET]: handle_IRET,
+      [JEQ]: handle_JEQ,
+      [JGT]: handle_JGT,
+      [JLT]: handle_JLT,
+      [JMP]: handle_JMP,
+      [JNE]: handle_JNE,
+      [LDI]: handle_LDI,
+      [MUL]: handle_MUL,
+      [POP]: handle_POP,
+      [PRA]: handle_PRA,
+      [PRN]: handle_PRN,
+      [PUSH]: handle_PUSH,
+      [RET]: handle_RET,
+      [ST]: handle_ST
     };
+
+    if (this.reg[IS] !== 0) {
+      inting();
+      IR = this.ram.read(this.reg.PC);
+    }
+
+    if (Object.keys(branchTable).includes(IR.toString())) {
+      branchTable[IR](operandA, operandB);
+    } else {
+      handle_invalid_instruction(IR);
+    }
 
     switch (IR) {
       case CALL: // Mul and Add shouldnt be in here...
