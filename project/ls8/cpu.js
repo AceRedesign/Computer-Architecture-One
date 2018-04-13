@@ -78,6 +78,10 @@ class CPU {
    * Advances the CPU one cycle
    */
   tick() {
+    const inting = () => {
+      this.stopTimer(); // Don't interrupt
+      this.reg[6] = this.reg[6] & 0b11111110; //Bit
+    };
     // Load the instruction register (IR--can just be a local variable here)
     // from the memory address pointed to by the PC. (I.e. the PC holds the
     // index into memory of the instruction that's about to be executed
@@ -112,6 +116,42 @@ class CPU {
     const PUSH = 0b01001101;
     const RET = 0b00001001;
     const ST = 0b10011010;
+
+    //Stack pointer and IS
+    let SP = 7;
+    let IS = 6;
+    const advancePC = true;
+
+    //Helpers
+    const handle_ADD = (registerA, registerB) => {
+      this.reg[registerA] = this.alu("ADD", registerA, registerB);
+      this.advancePC = true;
+    };
+
+    const handle_MUL = (registerA, registerB) => {
+      this.reg[registerA] = this.alu("MUL", registerA, registerB);
+    };
+
+    const handle_CMP = (registerA, registerB) => {
+      switch (true) {
+        case this.reg[registerA] === this.reg[registerB]:
+          this.reg.FL = 0b00000001;
+          break;
+        case this.reg[registerA] > this.reg[registerB]:
+          this.reg.FL = 0b00000010;
+          break;
+        case this.reg[registerA] < this.reg[registerB]:
+          this.reg.FL = 0b00000100;
+          break;
+      }
+      this.advancePC = true;
+    };
+
+    const handle_CALL = register => {
+      handle_PUSHval(this.reg.PC + 2);
+      this.reg.PC = this.reg[register];
+      this.advancePC = false;
+    };
 
     // Increment the PC register to go to the next instruction. Instructions
     // can be 1, 2, or 3 bytes long. Hint: the high 2 bits of the
